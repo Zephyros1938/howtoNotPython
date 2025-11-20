@@ -1,66 +1,91 @@
 class Main:
-    __contents__: dict = {"__import__": {}, "assets": {}}
+    __contents__ = {"__import__": {}, "assets": {}}
     __toImport = ["pygame", "zipfile", "os", "shutil", "math"]
 
     def __init__(self, *flags):
         for x in self.__toImport:
             self["__import__"][x] = __import__(x)
-        self["__import__"]["pygame"].init()
+
+        pg = self["__import__"]["pygame"]
+
+        pg.init()
+
         self["windowing"] = {
-            "WIN": self["__import__"]["pygame"].display.set_mode((1920, 1080)),
+            "WIN": pg.display.set_mode((1920, 1080)),
             "DT": -1.0,
             "MAX_FPS": -1,
         }
         self["common"] = {
-            "CLOCK": self["__import__"]["pygame"].time.Clock(),
+            "CLOCK": pg.time.Clock(),
             "RUNNING": True,
         }
+
         self["AssetManager"] = AssetManager(self)
-        self["AssetManager"].registerFontZipped(
-            "fonts/Roboto_Mono.zip", "static/RobotoMono-Bold.ttf", "cool", 24
+        AM = self["AssetManager"]
+
+        AM.registerFontZipped(
+            "fonts/Roboto_Mono.zip",
+            "static/RobotoMono-Bold.ttf",
+            "cool",
+            24,
         )
-        self["AssetManager"].registerImage(
-            "images/home_25dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png", "home"
+
+        AM.registerImage(
+            "images/home_25dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png",
+            "home",
         )
 
     def run(self, *flags):
+        pg = self["__import__"]["pygame"]
+        math = self["__import__"]["math"]
+
         if "debug" in flags:
             self["DEBUG"] = {}
+
         TOTAL_TIME = 0
         WIN = self["windowing"]["WIN"]
         CLOCK = self["common"]["CLOCK"]
         AM = self["AssetManager"]
         coolFont = AM.getFont("cool", 24)
+
+        ev_get = pg.event.get
+        flip = pg.display.flip
+        fill = WIN.fill
+        sin = math.sin
+        cos = math.cos
+        getImage = AM.getImage
+
+        win_w = WIN.get_width()
+        win_h = WIN.get_height()
+
         while self["common"]["RUNNING"]:
-            for ev in self["__import__"]["pygame"].event.get():
-                if ev.type == self["__import__"]["pygame"].QUIT:
+            for ev in ev_get():
+                if ev.type == pg.QUIT:
                     self["common"]["RUNNING"] = False
 
-            WIN.fill("blue")
+            fill("blue")
+
             fps = CLOCK.get_fps()
+
             coolFont.render_to(
                 WIN,
                 (
-                    (self["__import__"]["math"].sin(TOTAL_TIME) + 1)
-                    / 2
-                    * WIN.get_width(),
-                    (self["__import__"]["math"].cos(TOTAL_TIME) + 1)
-                    / 2
-                    * WIN.get_height(),
+                    (sin(TOTAL_TIME) + 1) * 0.5 * win_w,
+                    (cos(TOTAL_TIME) + 1) * 0.5 * win_h,
                 ),
                 f"{fps:.2f}",
             )
-            WIN.blit(AM.getImage("home"), (100, 100))
 
+            WIN.blit(getImage("home"), (100, 100))
 
-            self["__import__"]["pygame"].display.flip()
+            flip()
 
-            self["windowing"]["DT"] = (
-                CLOCK.tick(self["windowing"]["MAX_FPS"]) / 1000.0
-            )
-            TOTAL_TIME += self["windowing"]["DT"]
+            dt = CLOCK.tick(self["windowing"]["MAX_FPS"]) / 1000.0
+            self["windowing"]["DT"] = dt
+            TOTAL_TIME += dt
+
         if "DEBUG" in self.__contents__:
-            self["__import__"]["pygame"].quit()
+            pg.quit()
             print(self.__contents__)
 
         return self
@@ -69,7 +94,6 @@ class Main:
         self["AssetManager"].cleanup()
 
     def initializeAttributesS1(self, codeToDo: list[str] = [], *flags):
-        """Uses `exec()` to set attributes"""
         for x in codeToDo:
             exec(x, globals(), locals())
         return self
@@ -90,82 +114,91 @@ class AssetManager:
     from typing import Any
     from os import name as osname
 
-    _CACHE: dict = {"FONTS": {}, "IMAGES": {}}
+    _CACHE = {"FONTS": {}, "IMAGES": {}}
+
+    _UNZIPPED_PATHS = {}
+    _SEARCH_DIR = "./assets/"
+    _OUTPUT_DIR = "./unzipped/" if osname != "posix" else "/tmp/zephyros1938/unzipped/"
 
     def __init__(self, main: Main):
         self.main = main
+        os = self.main["__import__"]["os"]
+
         try:
-            self.main["__import__"]["os"].mkdir(self._OUTPUT_DIR)
-        except:
+            os.makedirs(self._OUTPUT_DIR, exist_ok=True)
+        except FileExistsError:
             pass
 
-    _UNZIPPED_PATHS: dict[str, str] = {}
-    _SEARCH_DIR = "./assets/"
-    _OUTPUT_DIR = "./unzipped/" if osname != "posix" else "/tmp/zephyros1938/unzipped/"
+        self._pg = self.main["__import__"]["pygame"]
+        self._ospath = os.path
 
     def unzipFile(self, path: str):
         zipfile = self.main["__import__"]["zipfile"]
 
-        with zipfile.ZipFile(self._SEARCH_DIR + path, "r") as zip_ref:
-            zip_ref.extractall(self._OUTPUT_DIR + path)
+        full = self._SEARCH_DIR + path
+        out = self._OUTPUT_DIR + path
+
+        with zipfile.ZipFile(full, "r") as zip_ref:
+            zip_ref.extractall(out)
+
         print(f"Unzipped {path} to {self._SEARCH_DIR}")
-        return self._OUTPUT_DIR + path
+        return out
 
     def registerFontZipped(
-        self, fontZipPath: str, fontFullPath: str, fontName: str, fontSize: int
+        self,
+        fontZipPath: str,
+        fontFullPath: str,
+        fontName: str,
+        fontSize: int,
     ):
-        """preferably use google fonts for this"""
-        if not fontZipPath in self._UNZIPPED_PATHS:
+        """try to use google fonts for this since they output well for zip files"""
+        if fontZipPath not in self._UNZIPPED_PATHS:
             self._UNZIPPED_PATHS[fontZipPath] = self.unzipFile(fontZipPath)
-        try:
-            fp = self._UNZIPPED_PATHS[fontZipPath] + "/" + fontFullPath
-            fn = (fontName,fontSize)
-            if fn not in self._CACHE["FONTS"]:
-                self._CACHE["FONTS"][fn] = self.main["__import__"][
-                    "pygame"
-                ].freetype.Font(fp, fontSize)
-            else:
-                print(f"[INFO] Font [{fn}] ({fontName}) Already Registered in cache.")
-        except Exception as e:
-            raise Exception(e)
+
+        fp = self._UNZIPPED_PATHS[fontZipPath] + "/" + fontFullPath
+        key = (fontName, fontSize)
+
+        if key not in self._CACHE["FONTS"]:
+            self._CACHE["FONTS"][key] = self._pg.freetype.Font(fp, fontSize)
+        else:
+            print(f"[INFO] Font {key} already cached.")
 
     def registerFontDirect(self, fontPath: str, fontName: str, fontSize: int):
-        fn = (fontName,fontSize)
-        if fn not in self._CACHE["FONTS"]:
-            self._CACHE["FONTS"][fn] = self.main["__import__"]["pygame"].freetype.Font(
-                fontPath, fontSize
-            )
+        key = (fontName, fontSize)
+
+        if key not in self._CACHE["FONTS"]:
+            self._CACHE["FONTS"][key] = self._pg.freetype.Font(fontPath, fontSize)
         else:
-            print(f"[INFO] Font [{fn}] ({fontName}) Already Registered in Cache.")
+            print(f"[INFO] Font {key} already cached.")
 
     def getFont(self, fontName: str, fontSize: int):
-        fn = (fontName,fontSize)
-        if fn not in self._CACHE["FONTS"]:
+        key = (fontName, fontSize)
+        if key not in self._CACHE["FONTS"]:
             raise Exception(
                 f"Please register font {fontName} with AssetManager.registerFont()"
             )
-        return self._CACHE["FONTS"][fn]
+        return self._CACHE["FONTS"][key]
 
     def registerImage(self, imagePath, imageName):
         if imageName not in self._CACHE["IMAGES"]:
-            self._CACHE["IMAGES"][imageName] = self.main["__import__"]["pygame"].image.load(self.main["__import__"]["os"].path.join('assets', imagePath))
+            joined = self._ospath.join("assets", imagePath)
+            self._CACHE["IMAGES"][imageName] = self._pg.image.load(joined)
         else:
-            print(f"[INFO] Image [{imageName}] ({imagePath}) Already Registered in Cache.")
-    
+            print(f"[INFO] Image [{imageName}] already cached.")
+
     def getImage(self, imageName):
         if imageName not in self._CACHE["IMAGES"]:
             raise Exception(
                 f"Please register image {imageName} with AssetManager.registerImage()"
             )
         return self._CACHE["IMAGES"][imageName]
-        
 
     def cleanup(self):
-        (
-            self.main["__import__"]["shutil"].rmtree(self._OUTPUT_DIR)
-            if self.osname != "posix"
-            else ()
-        )
+        shutil = self.main["__import__"]["shutil"]
+        try:
+            shutil.rmtree(self._OUTPUT_DIR)
+        except FileNotFoundError:
+            pass
 
 
 if __name__ == "__main__":
