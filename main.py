@@ -85,8 +85,10 @@ class Main:
             TOTAL_TIME += dt
 
         if "DEBUG" in self.__contents__:
-            pg.quit()
-            print(self.__contents__)
+            if self["DEBUG"]["printOnExit"]:
+                print(self.__contents__)
+            if self["DEBUG"]["quitPygameOnExit"]:
+                pg.quit()
 
         return self
 
