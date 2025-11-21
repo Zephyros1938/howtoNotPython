@@ -1,109 +1,147 @@
-class Main:
-    __contents__ = {"__import__": {}, "assets": {}}
-    __toImport = ["pygame", "zipfile", "os", "shutil", "math"]
+import glfw, OpenGL.GL as GL
+from glm import vec3
+import glm
+from Std import UI
+from Std.UI import imgui
 
-    def __init__(self, *flags):
-        for x in self.__toImport:
-            self["__import__"][x] = __import__(x)
+from Std.ECS.Components import Camera, Transform, Velocity
+import Systems
+import Std
 
-        pg = self["__import__"]["pygame"]
 
-        pg.init()
-
-        self["windowing"] = {
-            "WIN": pg.display.set_mode((1920, 1080)),
-            "DT": -1.0,
+class Program:
+    __contents__ = {
+        "WINDOWING": {
+            "width": 1920,
+            "height": 1080,
+            "title": "OpenGL Window",
             "MAX_FPS": -1,
-        }
-        self["common"] = {
-            "CLOCK": pg.time.Clock(),
-            "RUNNING": True,
-        }
+            "DELTA": 0.0,
+            "CLEARCOLOR": [0.1, 0.1, 0.1, 1.0],
+        },
+        "EXEC_KWARGS": {
+            "antialias": False,
+            "vsync": False,
+            "debug": False,
+            "fullscreen": False,
+        },
+        "GLFW_INIT_VALUES": {
+            "context_version_major": (glfw.CONTEXT_VERSION_MAJOR, 3),
+            "context_version_minor": (glfw.CONTEXT_VERSION_MINOR, 3),
+            "opengl_profile": (glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE),
+            "opengl_forward_compat": (glfw.OPENGL_FORWARD_COMPAT, GL.GL_TRUE),
+            "resizable": (glfw.RESIZABLE, GL.GL_FALSE),
+            "samples": (glfw.SAMPLES, 4),
+            "red_bits": (glfw.RED_BITS, 8),
+            "green_bits": (glfw.GREEN_BITS, 8),
+            "blue_bits": (glfw.BLUE_BITS, 8),
+            "alpha_bits": (glfw.ALPHA_BITS, 8),
+            "depth_bits": (glfw.DEPTH_BITS, 24),
+            "stencil_bits": (glfw.STENCIL_BITS, 8),
+            "doublebuffer": (glfw.DOUBLEBUFFER, GL.GL_TRUE),
+            "srgb_capable": (glfw.SRGB_CAPABLE, GL.GL_TRUE),
+            "transparent_framebuffer": (glfw.TRANSPARENT_FRAMEBUFFER, GL.GL_TRUE),
+        },
+    }
 
-        self["AssetManager"] = AssetManager(self)
-        AM = self["AssetManager"]
+    def __preinit__(self, **kwargs):
+        for key, value in kwargs.items():
+            self.__contents__["EXEC_KWARGS"][key.lower()] = value
+        for k, v in self.__contents__.items():
+            setattr(self, k, v)
 
-        AM.registerFontZipped(
-            "fonts/Roboto_Mono.zip",
-            "static/RobotoMono-Bold.ttf",
-            "cool",
-            24,
+    def __init__(self, **kwargs):
+        self.__preinit__(**kwargs)
+        self.__initgl__(**kwargs)
+
+        # -------------------------------
+        # Example Scene Setup
+        # -------------------------------
+        self.scene = Std.Scene()
+
+        # Register component types
+        self.scene.registerComponentType(Transform)
+        self.scene.registerComponentType(Velocity)
+        self.scene.registerComponentType(Camera)
+
+        # Create entity
+        e = self.scene.createEntity()
+
+        # Add components
+        self.scene.addComponent(e, Transform(vec3(0), vec3(0), vec3(1)))
+        self.scene.addComponent(e, Velocity(0, 0, 1))
+
+        cam = self.scene.createEntity()
+        self.scene.addComponent(
+            cam, Camera(position=glm.vec3(0, 0, 3), yaw=-90, pitch=0)
         )
 
-        AM.registerImage(
-            "images/home_25dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png",
-            "home",
+        # Add systems
+        self.scene.addSystem(Systems.MovementSystem())
+        self.scene.addSystem(Systems.CameraSystem())
+
+    def __initgl__(self, **kwargs):
+        if not glfw.init():
+            raise Exception("GLFW initialization failed")
+
+        for hint, (param, value) in self["GLFW_INIT_VALUES"].items():
+            glfw.window_hint(param, value)
+
+        self._window = glfw.create_window(
+            self["WINDOWING"]["width"],
+            self["WINDOWING"]["height"],
+            self["WINDOWING"]["title"],
+            glfw.get_primary_monitor() if self["EXEC_KWARGS"]["fullscreen"] else None,
+            None,
         )
 
-    def run(self, *flags):
-        pg = self["__import__"]["pygame"]
-        math = self["__import__"]["math"]
+        if not self._window:
+            glfw.terminate()
+            raise Exception("GLFW window creation failed")
 
-        if "debug" in flags:
-            self["DEBUG"] = {}
-
-        TOTAL_TIME = 0
-        WIN = self["windowing"]["WIN"]
-        CLOCK = self["common"]["CLOCK"]
-        AM = self["AssetManager"]
-        coolFont = AM.getFont("cool", 24)
-
-        ev_get = pg.event.get
-        flip = pg.display.flip
-        fill = WIN.fill
-        sin = math.sin
-        cos = math.cos
-        getImage = AM.getImage
-
-        win_w = WIN.get_width()
-        win_h = WIN.get_height()
-
-        while self["common"]["RUNNING"]:
-            for ev in ev_get():
-                if ev.type == pg.QUIT:
-                    self["common"]["RUNNING"] = False
-
-            fill("blue")
-
-            fps = CLOCK.get_fps()
-
-            coolFont.render_to(
-                WIN,
-                (
-                    (sin(TOTAL_TIME) + 1) * 0.5 * win_w,
-                    (cos(TOTAL_TIME) + 1) * 0.5 * win_h,
-                ),
-                f"{fps:.2f}",
-            )
-
-            WIN.blit(getImage("home"), (100, 100))
-
-            flip()
-
-            dt = CLOCK.tick(self["windowing"]["MAX_FPS"]) / 1000.0
-            self["windowing"]["DT"] = dt
-            TOTAL_TIME += dt
-
-        if "DEBUG" in self.__contents__:
-            if self["DEBUG"]["printOnExit"]:
-                print(self.__contents__)
-            if self["DEBUG"]["quitPygameOnExit"]:
-                pg.quit()
-
+        glfw.make_context_current(self._window)
+        if self["EXEC_KWARGS"]["vsync"]:
+            glfw.swap_interval(1)
+        GL.glClearColor(*self["WINDOWING"]["CLEARCOLOR"])
+        imgui.create_context()
+        self._impl = imgui.integrations.glfw.GlfwRenderer(self._window)
         return self
 
-    def cleanup(self, *flags):
-        self["AssetManager"].cleanup()
+    def run(self):
+        old_t = glfw.get_time()
+        self.__getattribute__("WINDOWING")["DELTA"] = 0.0
 
-    def initializeAttributesS1(self, codeToDo: list[str] = [], *flags):
-        for x in codeToDo:
-            exec(x, globals(), locals())
+        while not glfw.window_should_close(self._window):
+            t = glfw.get_time()
+            dt = t - old_t
+            old_t = t
+            self.__getattribute__("WINDOWING")["DELTA"] = dt
+
+            glfw.poll_events()
+            self._impl.process_inputs()
+
+            GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT) # type: ignore
+
+            imgui.new_frame()
+            imgui.begin("Cool Window", True)
+            imgui.text(f"FPS: {1 / self.__getattribute__("WINDOWING")["DELTA"]}")
+            imgui.end()
+
+            # Update non-UI ECS systems
+            self.scene.update(dt)
+
+            # -------------------------------------------------
+            # Render ImGui AFTER systems finish drawing
+            # -------------------------------------------------
+            UI.renderImGuiData(self._impl)
+
+            glfw.swap_buffers(self._window)
+
+        glfw.terminate()
         return self
 
-    def initializeAttributesS2(self, **classes):
-        for name, cls in classes.items():
-            setattr(Main, name, cls)
-        return self
+    def cleanup(self):
+        pass
 
     def __setitem__(self, key, item):
         self.__contents__[key] = item
@@ -112,110 +150,34 @@ class Main:
         return self.__contents__[key]
 
 
-class AssetManager:
-    from typing import Any
-    from os import name as osname
+# ==================================================================
+# MAIN ENTRY
+# ==================================================================
 
-    _CACHE = {"FONTS": {}, "IMAGES": {}}
 
-    _UNZIPPED_PATHS = {}
-    _SEARCH_DIR = "./assets/"
-    _OUTPUT_DIR = "./unzipped/" if osname != "posix" else "/tmp/zephyros1938/unzipped/"
-
-    def __init__(self, main: Main):
-        self.main = main
-        os = self.main["__import__"]["os"]
-
+def parse_args(argv):
+    def parseArgValue(value: str):
         try:
-            os.makedirs(self._OUTPUT_DIR, exist_ok=True)
-        except FileExistsError:
+            return int(value)
+        except ValueError:
             pass
-
-        self._pg = self.main["__import__"]["pygame"]
-        self._ospath = os.path
-
-    def unzipFile(self, path: str):
-        zipfile = self.main["__import__"]["zipfile"]
-
-        full = self._SEARCH_DIR + path
-        out = self._OUTPUT_DIR + path
-
-        with zipfile.ZipFile(full, "r") as zip_ref:
-            zip_ref.extractall(out)
-
-        print(f"Unzipped {path} to {self._SEARCH_DIR}")
-        return out
-
-    def registerFontZipped(
-        self,
-        fontZipPath: str,
-        fontFullPath: str,
-        fontName: str,
-        fontSize: int,
-    ):
-        """try to use google fonts for this since they output well for zip files"""
-        if fontZipPath not in self._UNZIPPED_PATHS:
-            self._UNZIPPED_PATHS[fontZipPath] = self.unzipFile(fontZipPath)
-
-        fp = self._UNZIPPED_PATHS[fontZipPath] + "/" + fontFullPath
-        key = (fontName, fontSize)
-
-        if key not in self._CACHE["FONTS"]:
-            self._CACHE["FONTS"][key] = self._pg.freetype.Font(fp, fontSize)
-        else:
-            print(f"[INFO] Font {key} already cached.")
-
-    def registerFontDirect(self, fontPath: str, fontName: str, fontSize: int):
-        key = (fontName, fontSize)
-
-        if key not in self._CACHE["FONTS"]:
-            self._CACHE["FONTS"][key] = self._pg.freetype.Font(fontPath, fontSize)
-        else:
-            print(f"[INFO] Font {key} already cached.")
-
-    def getFont(self, fontName: str, fontSize: int):
-        key = (fontName, fontSize)
-        if key not in self._CACHE["FONTS"]:
-            raise Exception(
-                f"Please register font {fontName} with AssetManager.registerFont()"
-            )
-        return self._CACHE["FONTS"][key]
-
-    def registerImage(self, imagePath, imageName):
-        if imageName not in self._CACHE["IMAGES"]:
-            joined = self._ospath.join("assets", imagePath)
-            self._CACHE["IMAGES"][imageName] = self._pg.image.load(joined)
-        else:
-            print(f"[INFO] Image [{imageName}] already cached.")
-
-    def getImage(self, imageName):
-        if imageName not in self._CACHE["IMAGES"]:
-            raise Exception(
-                f"Please register image {imageName} with AssetManager.registerImage()"
-            )
-        return self._CACHE["IMAGES"][imageName]
-
-    def cleanup(self):
-        shutil = self.main["__import__"]["shutil"]
         try:
-            shutil.rmtree(self._OUTPUT_DIR)
-        except FileNotFoundError:
+            return float(value)
+        except ValueError:
             pass
+        if value.lower() in ("true", "false"):
+            return value.lower() == "true"
+        return value
+
+    result = {}
+    for arg in argv:
+        if "=" in arg:
+            key, value = arg.split("=", 1)
+            # Strip optional surrounding quotes
+            value = value.strip('"').strip("'")
+            result[key] = parseArgValue(value)
+    return result
 
 
 if __name__ == "__main__":
-    Main().initializeAttributesS1(
-        [
-            """
-Main.Vector2 = type(
-    "Vector2",
-    (object,),
-    {
-        "x": 0,
-        "y": 0,
-        "__init__": lambda self, x=0, y=0: setattr(self, "x", x) or setattr(self, "y", y)
-    }
-)
-""",
-        ]
-    ).initializeAttributesS2().run().cleanup()
+    Program(**parse_args(__import__("sys").argv[1:])).run().cleanup()
